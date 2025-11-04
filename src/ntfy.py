@@ -3,6 +3,7 @@ import logging
 import aiohttp
 import asyncio
 import proxmoxer
+from proxmoxer.core import ResourceException
 import sys
 import urllib3
 import time
@@ -67,6 +68,102 @@ async def send_notification(title, tags, message):
             logging.debug(f"Response Text: {e.message}")
         except Exception as e:
             logging.error(f"Error sending notification: {e}")
+
+async def check_permissions(proxmox, nodes):
+    if not nodes:
+        return False, "No nodes found to check permissions"
+    
+    test_node = nodes[0]['node']
+    
+    try:
+        # Get the effective permissions for the current user/token
+        permissions = proxmox.access.permissions.get()
+        logging.debug(f"Retrieved permissions: {permissions}")
+        
+        # Check if we have Sys.Audit permission at datacenter level (/) or node level
+        has_sys_audit = False
+        permission_details = []
+        
+        # Helper function to check if Sys.Audit is in permissions (handles different formats)
+        def has_permission(perms, perm_name):
+            if isinstance(perms, list):
+                return perm_name in perms
+            elif isinstance(perms, dict):
+                # Could be {'Sys.Audit': True} or similar
+                return perm_name in perms or any(perm_name in str(p) for p in perms.keys())
+            elif isinstance(perms, str):
+                return perm_name in perms
+            return False
+        
+        # Check datacenter level permissions
+        if '/' in permissions:
+            dc_perms = permissions['/']
+            if has_permission(dc_perms, 'Sys.Audit'):
+                has_sys_audit = True
+                permission_details.append("Datacenter level (/)")
+        
+        # Check node level permissions if datacenter level not found
+        if not has_sys_audit:
+            node_path = f"/nodes/{test_node}"
+            if node_path in permissions:
+                node_perms = permissions[node_path]
+                if has_permission(node_perms, 'Sys.Audit'):
+                    has_sys_audit = True
+                    permission_details.append(f"Node level ({node_path})")
+        
+        # Also check all node paths if still not found (in case path format differs)
+        if not has_sys_audit:
+            for path in permissions.keys():
+                if path.startswith('/nodes/') and has_permission(permissions[path], 'Sys.Audit'):
+                    has_sys_audit = True
+                    permission_details.append(f"Node level ({path})")
+                    break
+        
+        if has_sys_audit:
+            logging.info(f"Permission check passed: Sys.Audit found at {', '.join(permission_details)}")
+            return True, None
+        else:
+            # Check if we can access permissions endpoint at all (might indicate privilege separation issue)
+            error_msg = "Sys.Audit permission not found in effective permissions"
+            logging.error(f"Permission check failed: {error_msg}")
+            logging.error(f"Checked permissions for datacenter (/) and node (/nodes/{test_node})")
+            logging.error("")
+            logging.error("Required permissions for this application:")
+            logging.error("  - Sys.Audit permission on the datacenter or node level")
+            logging.error("    (This allows reading system audit logs and task information)")
+            logging.error("")
+            logging.error("If you're using an API token with 'Privilege Separation' enabled:")
+            logging.error("  1. Go to Datacenter > Permissions > API Tokens")
+            logging.error("  2. Edit your token")
+            logging.error("  3. Assign the 'Sys.Audit' role to the token at:")
+            logging.error("     - Datacenter level: / (gives access to all nodes)")
+            logging.error("     - Or node level: /nodes/{node_name} (gives access to specific node)")
+            logging.error("  4. Ensure the associated user also has the required permissions")
+            logging.error("     (Token permissions are the intersection of user and token permissions)")
+            logging.error("")
+            logging.error("Alternatively, you can disable 'Privilege Separation' to grant")
+            logging.error("the token all permissions that the associated user has.")
+            return False, error_msg
+            
+    except ResourceException as e:
+        error_msg = str(e)
+        if "403" in error_msg or "Forbidden" in error_msg or "Permission check failed" in error_msg:
+            logging.error(f"Permission check failed: Cannot access permissions endpoint: {error_msg}")
+            logging.error("This indicates that the token lacks permissions to query its own permissions.")
+            logging.error("")
+            logging.error("If you're using an API token with 'Privilege Separation' enabled:")
+            logging.error("  1. Go to Datacenter > Permissions > API Tokens")
+            logging.error("  2. Edit your token")
+            logging.error("  3. Assign the 'Sys.Audit' role to the token")
+            logging.error("  4. Or disable 'Privilege Separation' to grant full user permissions")
+            return False, error_msg
+        else:
+            # Other ResourceException - re-raise
+            raise
+    except Exception as e:
+        # Re-raise other exceptions (connection issues, etc.)
+        logging.error(f"Unexpected error checking permissions: {e}")
+        raise
 
 async def get_proxmox_tasks(proxmox, since):
     nodes = proxmox.nodes.get()
@@ -208,6 +305,20 @@ async def monitor(proxmox_host=None, proxmox_port=None, proxmox_user=None,
             raise ValueError(f"Invalid response from Proxmox API: expected list of nodes, got {type(nodes)}")
         logging.info(f"Successfully connected to Proxmox API at {proxmox_host}:{proxmox_port} (found {len(nodes)} node(s))")
         
+        # Check permissions for accessing tasks
+        if use_token:
+            logging.info("Checking API token permissions...")
+            has_permissions, perm_error = await check_permissions(proxmox, nodes)
+            if not has_permissions:
+                raise PermissionError(f"API token lacks required permissions to access tasks: {perm_error}")
+            logging.info("API token permissions verified: can access tasks")
+        else:
+            # For password auth, we assume full permissions (user's own permissions)
+            logging.debug("Password authentication: skipping explicit permission check")
+        
+    except PermissionError:
+        # Re-raise permission errors as-is (they already have helpful messages)
+        raise
     except Exception as e:
         error_msg = str(e)
         # Check if it's a connection-related error
@@ -283,7 +394,22 @@ if __name__ == "__main__":
         stream=sys.stdout)
     
     logging.info(f"Proxmox configuration: proxmox_api_url={proxmox_api_url}, proxmox_port={proxmox_port}, proxmox_user={proxmox_user}, proxmox_token_name={proxmox_token_name}")
-    logging.debug(f"Proxmox configuration: proxmox_pass={proxmox_pass}, proxmox_token_value={proxmox_token_value}")
 
-    asyncio.run(monitor(proxmox_api_url, proxmox_port, proxmox_user, proxmox_pass,
-                       proxmox_token_name, proxmox_token_value, verify_ssl))
+    try:
+        asyncio.run(monitor(proxmox_api_url, proxmox_port, proxmox_user, proxmox_pass,
+                           proxmox_token_name, proxmox_token_value, verify_ssl))
+    except PermissionError as e:
+        # Permission errors are already logged with helpful messages
+        logging.error("Exiting due to insufficient permissions")
+        sys.exit(1)
+    except ConnectionError as e:
+        # Connection errors are already logged with helpful messages
+        logging.error("Exiting due to connection error")
+        sys.exit(1)
+    except KeyboardInterrupt:
+        logging.info("Received interrupt signal, shutting down gracefully")
+        sys.exit(0)
+    except Exception as e:
+        # Unexpected errors should still show traceback for debugging
+        logging.error(f"Unexpected error: {e}")
+        raise
