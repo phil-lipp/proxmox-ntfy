@@ -3,6 +3,24 @@
 All notable changes to this project will be documented in this file.
 
 
+## [2.1.0](https://github.com/qtsone/proxmox-ntfy/compare/v2.0.0...v2.1.0) (2025-11-04)
+
+
+### Features
+* **permissions:** implement automatic permission checking for API tokens
+* **permissions:** support per-node permission checking - only monitor nodes with Sys.Audit permission
+* **permissions:** graceful handling of partial permissions - monitor accessible nodes and exclude others
+
+### Bug Fixes
+* **tasks:** fix task fetching logic - remove invalid `source="all"` parameter
+* **tasks:** improve task fetching to handle empty results correctly
+* **error handling:** add clean exit handling for permission and connection errors (no traceback)
+
+### Minor Improvements
+* **logging:** add detailed permission checking logs showing which nodes are monitored/excluded
+* **logging:** improve error messages for permission issues with helpful troubleshooting steps
+* **permissions:** use `proxmox.access.permissions.get()` API to verify token permissions
+
 ## [2.0.0](https://github.com/qtsone/proxmox-ntfy/compare/v1.1.0...v2.0.0) (2025-11-04)
 
 

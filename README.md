@@ -43,6 +43,22 @@ If you want to use API Token authentication, set:
 - `PROXMOX_TOKEN_NAME`: Token name set during creation, dont include the "root@pam"
 - `PROXMOX_TOKEN_VALUE`: The secret that is displayed after creation
 
+### Required Permissions
+
+When using API Token authentication, the token requires the following permissions:
+
+- **Sys.Audit** permission on the datacenter level (`/`) or node level (`/nodes/{node_name}`)
+  - This permission allows reading system audit logs and task information
+  - If assigned at datacenter level, it applies to all nodes
+  - If assigned at node level, only that specific node will be monitored
+
+The application automatically checks permissions at startup and will:
+- Monitor only nodes where the token has `Sys.Audit` permission
+- Log warnings for nodes excluded due to insufficient permissions
+- Fail to start if no nodes have the required permissions
+
+**Note:** If you're using an API token with "Privilege Separation" enabled, ensure both the user and the token have the required permissions, as token permissions are the intersection of user and token permissions.
+
 ## Usage
 
 Run the Docker container with the desired environment variables:
