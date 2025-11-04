@@ -24,26 +24,47 @@ docker pull ibacalu/proxmox-ntfy
 ## Configuration
 
 The script can be configured using the following environment variables:
+(Hint: use/copy the provided `example.env` in the `docker` folder)
 
-- `NTFY_SERVER_URL`: Ntfy server URL and topic (default: "https://ntfy.sh/CA9FFE70-B1B0-4C1C-9256-0BBD8FAE2CE6")
+- `NTFY_SERVER_URL`: Ntfy server URL and topic  (mandatory)
 - `NTFY_TOKEN`: Ntfy authentication token (optional)
 - `NTFY_USER`: Ntfy username (optional)
 - `NTFY_PASS`: Ntfy password (optional)
 - `LOG_LEVEL`: Logging level (default: "INFO")
-- `PROXMOX_API_URL`: Proxmox API URL (default: "pve:8006")
-- `PROXMOX_USER`: Proxmox username (default: "root@pam")
-- `PROXMOX_PASS`: Proxmox password (default: "root")
+- `PROXMOX_API_URL`: Proxmox API URL (mandatory)
+- `PROXMOX_PORT`: Port under which Proxmox is reachable, probably 8006, if you're connecting via IP and 80 or 443, if Proxmox is behind a Reverse Proxy (mandatory)
+- `VERIFY_SSL`: Whether proxmoxer should verify the SSL signature of the Proxmox host
+- `PROXMOX_USER`: Proxmox username (mandatory)
+
+If you want to use password authentication, set:
+- `PROXMOX_PASS`: Proxmox password
+
+If you want to use API Token authentication, set:
+- `PROXMOX_TOKEN_NAME`: Token name set during creation, dont include the "root@pam"
+- `PROXMOX_TOKEN_VALUE`: The secret that is displayed after creation
 
 ## Usage
 
 Run the Docker container with the desired environment variables:
 
+# Password authentication
 ```sh
 docker run -d --name proxmox-ntfy 
-    -e NTFY_SERVER_URL="https://ntfy.sh" \
+    -e NTFY_SERVER_URL="https://ntfy.sh/your-topic" \
     -e PROXMOX_API_URL="your_proxmox_url" \
     -e PROXMOX_USER="your_username" \
     -e PROXMOX_PASS="your_password" \
+ibacalu/proxmox-ntfy:latest
+```
+
+# API Token authentication
+```sh
+docker run -d --name proxmox-ntfy 
+    -e NTFY_SERVER_URL="https://ntfy.sh/your-topic" \
+    -e PROXMOX_API_URL="your_proxmox_url" \
+    -e PROXMOX_USER="your_username" \
+    -e PROXMOX_TOKEN_NAME="name_of_your_token" \
+    -e PROXMOX_TOKEN_VALUE="secret_of_your_token" \
 ibacalu/proxmox-ntfy:latest
 ```
 
