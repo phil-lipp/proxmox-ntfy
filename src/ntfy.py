@@ -202,9 +202,11 @@ async def monitor(proxmox_host=None, proxmox_port=None, proxmox_user=None,
                                             password=proxmox_pass,
                                             verify_ssl=verify_ssl)
         
-        # Test connection by trying to get nodes
-        proxmox.nodes.get()
-        logging.info(f"Successfully connected to Proxmox API at {proxmox_host}:{proxmox_port}")
+        # Test connection by trying to get nodes and validate response
+        nodes = proxmox.nodes.get()
+        if not isinstance(nodes, list):
+            raise ValueError(f"Invalid response from Proxmox API: expected list of nodes, got {type(nodes)}")
+        logging.info(f"Successfully connected to Proxmox API at {proxmox_host}:{proxmox_port} (found {len(nodes)} node(s))")
         
     except Exception as e:
         error_msg = str(e)
