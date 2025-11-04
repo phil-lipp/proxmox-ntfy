@@ -13,7 +13,7 @@ All notable changes to this project will be documented in this file.
 
 ### Minor Improvements
 * **proxmox:** new environment variable for SSL verification
-* **environment variables:** remove defaults in order to provide better customizability
+* **environment variables:** remove defaults. Add hints in logging for missing environment variables. Exit when mandatory environment variables are missing
 * **documentation:** provide documented ´example.env´
 * **logging:** better connection error messages and diagnostics
 * **logging:** set default log level to INFO (from DEBUG)
